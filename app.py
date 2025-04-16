@@ -47,7 +47,7 @@ def predict():
         if "file" in request.files:
             # CSV Bulk Prediction
             file = request.files["file"]
-            
+
             # Check if file is a CSV
             if not file.filename.endswith('.csv'):
                 return jsonify({"error": "Please upload a valid CSV file."})
@@ -74,7 +74,7 @@ def predict():
             text_input = request.json["text"]
             predicted_sentiment = single_prediction(text_input)
             return jsonify({"prediction": predicted_sentiment})
-        
+
         else:
             return jsonify({"error": "No valid input provided. Expecting JSON with 'text' or CSV file upload."})
 
@@ -99,7 +99,8 @@ def bulk_prediction(data):
 
 # 🔹 Start the Flask app
 if __name__ == "__main__":
-    app.run(port=5000, debug=True)  # Use debug=False in production
+    port = int(os.getenv("PORT", 5000))  # Use Render-assigned port or default to 5000
+    app.run(host="0.0.0.0", port=port, debug=True)
 
 
 
