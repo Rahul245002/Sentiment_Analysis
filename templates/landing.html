@@ -1,180 +1,156 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Sentiment Prediction Tool</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/creativetimofficial/tailwind-starter-kit/compiled-tailwind.min.css" />
+  <meta charset="UTF-8">
+  <title>🎯 Sentiment Prediction Tool</title>
   <style>
-    .fade-in {
-      animation: fadeIn 0.8s ease-in-out;
+    body {
+      background: linear-gradient(to right, #7F00FF, #E100FF);
+      color: white;
+      font-family: 'Segoe UI', sans-serif;
+      text-align: center;
+      padding: 3rem;
     }
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(10px); }
-      to { opacity: 1; transform: translateY(0); }
+
+    h1 {
+      font-size: 3rem;
+      margin-bottom: 2rem;
+      animation: pulse 2s infinite;
     }
-    .spinner {
-      border: 4px solid rgba(0, 0, 0, 0.1);
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      border-left-color: #09f;
-      animation: spin 1s ease infinite;
+
+    input[type="file"],
+    textarea {
+      background-color: #fff;
+      color: #333;
+      padding: 0.5rem;
+      border-radius: 8px;
+      width: 60%;
+      margin: 1rem auto;
     }
-    @keyframes spin { to { transform: rotate(360deg); } }
+
+    button {
+      background-color: #00ff99;
+      color: black;
+      padding: 1rem 2rem;
+      border: none;
+      border-radius: 30px;
+      font-size: 1.2rem;
+      cursor: pointer;
+      transition: 0.3s ease;
+      margin-top: 1rem;
+    }
+
+    button:hover {
+      background-color: #00cc88;
+      transform: scale(1.05);
+    }
+
+    .result {
+      margin-top: 2rem;
+      font-size: 1.5rem;
+      font-weight: bold;
+    }
+
+    .error {
+      color: #ffaaaa;
+      font-weight: bold;
+      margin-top: 1rem;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+      100% { transform: scale(1); }
+    }
   </style>
 </head>
-<body class="text-gray-800 antialiased">
-  <main class="min-h-screen bg-gray-100 py-10">
-    <div class="container mx-auto px-4">
-      <h1 class="text-4xl text-center font-bold mb-4">Sentiment Prediction Tool 🎯</h1>
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+<body>
+  <h1>🎯 Sentiment Prediction Tool</h1>
 
-        <!-- Left Side: Inputs -->
-        <div class="bg-white p-6 rounded-lg shadow-md">
-          <label class="block mb-2 font-semibold">Upload CSV File (with "text" column):</label>
-          <input type="file" id="csvFileInput" accept=".csv" class="mb-4 w-full border p-2 rounded" />
-          
-          <label class="block mb-2 font-semibold">Or Enter Text Below:</label>
-          <textarea id="textInput" rows="4" placeholder="e.g., I'm feeling great today!" class="w-full border p-2 rounded mb-4"></textarea>
+  <p>📂 <strong>Upload CSV File</strong> (must have a <code>"Sentence"</code> or <code>"text"</code> column):</p>
+  <input type="file" id="csv-file"><br>
 
-          <button onclick="predict()" class="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700">Predict</button>
+  <p>✍️ <strong>Or Enter Text Below:</strong></p>
+  <textarea id="text-input" rows="4" placeholder="I am feeling good..."></textarea><br>
 
-          <div id="loadingSpinner" class="flex justify-center mt-4 hidden"><div class="spinner"></div></div>
-        </div>
+  <button id="predict-btn">🚀 Predict</button>
 
-        <!-- Right Side: Result -->
-        <div class="bg-white p-6 rounded-lg shadow-md">
-          <h2 class="text-xl font-bold mb-2">Prediction Result</h2>
-          <div id="predictionResult" class="min-h-[80px] mb-4 text-lg fade-in"></div>
-          
-          <button id="downloadBtn" style="display:none" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 mb-4">Download Predictions</button>
-
-          <div>
-            <canvas id="sentimentChart" class="mt-6"></canvas>
-            <div id="sampleTable" class="mt-4 text-sm"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </main>
+  <div class="result" id="prediction-result" style="display: none;"></div>
+  <div class="error" id="error-msg"></div>
 
   <script>
-    function getEmoji(prediction) {
-      const map = { "positive": "😊", "negative": "😡", "neutral": "😐" };
-      return map[prediction.toLowerCase()] || "";
-    }
+    document.getElementById("predict-btn").addEventListener("click", function () {
+      const fileInput = document.getElementById("csv-file");
+      const textInput = document.getElementById("text-input").value;
+      const resultElement = document.getElementById("prediction-result");
+      const errorElement = document.getElementById("error-msg");
 
-    function updateChart(results) {
-      const ctx = document.getElementById("sentimentChart").getContext("2d");
-      const counts = { positive: 0, negative: 0, neutral: 0 };
-      results.forEach(r => counts[r.prediction]++);
-      new Chart(ctx, {
-        type: 'pie',
-        data: {
-          labels: ['Positive', 'Negative', 'Neutral'],
-          datasets: [{
-            data: [counts.positive, counts.negative, counts.neutral],
-            backgroundColor: ['#4ade80', '#f87171', '#60a5fa'],
-          }]
-        },
-        options: {
-          responsive: true,
-          plugins: {
-            legend: { position: 'bottom' }
-          }
-        }
-      });
-    }
+      resultElement.textContent = "";
+      resultElement.style.display = "none";
+      errorElement.textContent = "";
 
-    function showSampleTable(results) {
-      const sample = results.slice(0, 5);
-      const html = `
-        <h3 class="text-md font-bold mb-1">Sample Predictions:</h3>
-        <table class="w-full table-auto text-left border border-gray-200">
-          <thead><tr><th class="px-2 py-1 border">Text</th><th class="px-2 py-1 border">Sentiment</th></tr></thead>
-          <tbody>
-            ${sample.map(row => `<tr><td class="border px-2 py-1">${row.text}</td><td class="border px-2 py-1">${row.prediction}</td></tr>`).join('')}
-          </tbody>
-        </table>`;
-      document.getElementById("sampleTable").innerHTML = html;
-    }
-
-    function predict() {
-      const fileInput = document.getElementById("csvFileInput");
-      const textInput = document.getElementById("textInput");
-      const resultDiv = document.getElementById("predictionResult");
-      const spinner = document.getElementById("loadingSpinner");
-      const downloadBtn = document.getElementById("downloadBtn");
-      const sampleTable = document.getElementById("sampleTable");
-      const chartCanvas = document.getElementById("sentimentChart");
-
-      resultDiv.innerHTML = "";
-      spinner.classList.remove("hidden");
-      sampleTable.innerHTML = "";
-      chartCanvas.replaceWith(chartCanvas.cloneNode(true));  // Reset chart
+      const formData = new FormData();
 
       if (fileInput.files.length > 0) {
-        const formData = new FormData();
         formData.append("file", fileInput.files[0]);
+      }
 
-        fetch("http://localhost:5000/predict", {
+      if (textInput.trim()) {
+        formData.append("text", textInput.trim());
+      }
+
+      if (formData.has("file") || formData.has("text")) {
+        fetch("/predict", {
           method: "POST",
           body: formData
         })
-        .then(res => res.json())
+        .then(response => {
+          const contentType = response.headers.get("Content-Type");
+          if (contentType.includes("application/json")) {
+            return response.json();
+          } else {
+            // CSV Download trigger
+            return response.blob().then(blob => {
+              const link = document.createElement("a");
+              link.href = URL.createObjectURL(blob);
+              link.download = "Predictions.csv";
+              link.click();
+              return null;
+            });
+          }
+        })
         .then(data => {
-          const results = data.results;
-          resultDiv.innerHTML = `<strong>${results.length}</strong> predictions made successfully! 🎉`;
-          downloadBtn.style.display = "block";
-          showSampleTable(results);
-          updateChart(results);
+          if (!data) return;
+          if (data.error) {
+            errorElement.textContent = `❌ ${data.error}`;
+          } else {
+            resultElement.style.display = "block";
+            const sentiment = data.prediction?.toLowerCase();
+            let emoji = "🤔", color = "#fff", label = "Neutral 🤔";
 
-          // LocalStorage history
-          const history = JSON.parse(localStorage.getItem("sentiment_history") || "[]");
-          history.push({ time: new Date().toLocaleString(), count: results.length });
-          localStorage.setItem("sentiment_history", JSON.stringify(history));
+            if (sentiment === "positive") {
+              emoji = "😄✨🎉";
+              color = "#00ff99";
+              label = "Positive " + emoji;
+            } else if (sentiment === "negative") {
+              emoji = "😞💔😡";
+              color = "#ff4444";
+              label = "Negative " + emoji;
+            }
 
-          // Download CSV
-          downloadBtn.onclick = () => {
-            const csv = "text,prediction\n" + results.map(r => `"${r.text.replace(/"/g, '""')}",${r.prediction}`).join("\n");
-            const blob = new Blob([csv], { type: 'text/csv' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = "predictions.csv";
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-          };
-
-          confetti({ particleCount: 100, spread: 70 });
+            resultElement.innerHTML = `Sentiment Prediction: <strong style="color: ${color}; font-size: 2rem;">${label}</strong>`;
+          }
         })
-        .catch(err => resultDiv.innerHTML = `<span class="text-red-600">Error: ${err}</span>`)
-        .finally(() => spinner.classList.add("hidden"));
-
-      } else if (textInput.value.trim() !== "") {
-        fetch("http://localhost:5000/predict", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: textInput.value.trim() })
-        })
-        .then(res => res.json())
-        .then(data => {
-          const emoji = getEmoji(data.prediction);
-          resultDiv.innerHTML = `<strong>Prediction:</strong> ${data.prediction} ${emoji}`;
-          resultDiv.classList.add("fade-in");
-        })
-        .catch(err => resultDiv.innerHTML = `<span class="text-red-600">Error: ${err}</span>`)
-        .finally(() => spinner.classList.add("hidden"));
+        .catch(error => {
+          errorElement.textContent = `⚠️ An error occurred: ${error.message}`;
+        });
       } else {
-        spinner.classList.add("hidden");
-        resultDiv.innerHTML = `<span class="text-red-600">Please upload a file or enter text to predict.</span>`;
+        errorElement.textContent = "🚨 Please upload a CSV file or enter some text. ✍️";
       }
-    }
+    });
   </script>
 </body>
 </html>
+
+
 
