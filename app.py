@@ -1,77 +1,99 @@
-from flask import Flask, request, jsonify, render_template, send_from_directory
-from textblob import TextBlob
+from io import BytesIO
+from flask import Flask, request, jsonify, send_file, render_template
+import re
+import torch
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import pandas as pd
 import os
+from flask_cors import CORS
 
-app = Flask(__name__)
+# Initialize the Flask app
+app = Flask(__name__, template_folder='templates')
+CORS(app)  # Enable CORS
 
-# Set up the folder to store uploaded CSV files if needed
-UPLOAD_FOLDER = 'uploads'
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+# Verify model directory exists
+MODEL_DIR = "./sentiment_model"
+if not os.path.exists(MODEL_DIR):
+    raise FileNotFoundError(f"Model directory '{MODEL_DIR}' not found!")
 
-@app.route("/")
+# Load tokenizer and model
+tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR, local_files_only=True)
+model = AutoModelForSequenceClassification.from_pretrained(MODEL_DIR, local_files_only=True)
+
+# 🔹 Predict a single string
+def single_prediction(text_input):
+    inputs = tokenizer(text_input, return_tensors="pt", padding=True, truncation=True, max_length=512)
+    with torch.no_grad():
+        logits = model(**inputs).logits
+        predicted_class_id = logits.argmax().item()
+    return "Positive" if predicted_class_id == 1 else "Negative"
+
+# 🔹 Bulk prediction from DataFrame
+def bulk_prediction(data, column_name):
+    corpus = []
+    for sentence in data[column_name]:
+        cleaned = re.sub("[^a-zA-Z]", " ", str(sentence)).lower()
+        corpus.append(cleaned)
+
+    predictions = [single_prediction(text) for text in corpus]
+    data["Predicted sentiment"] = predictions
+    return data
+
+# 🔹 Home route
+@app.route("/", methods=["GET"])
 def home():
-    return render_template("landing.html")  # Renders the landing.html page
+    return render_template("landing.html")
 
+# 🔹 Test route
+@app.route("/test", methods=["GET"])
+def test():
+    return "✅ Sentiment Analysis service is up."
+
+# 🔹 Predict route
 @app.route("/predict", methods=["POST"])
 def predict():
-    # Handle file upload and text prediction
-    if 'file' in request.files:
-        file = request.files["file"]
-        
-        # Save the file to a directory if necessary
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-        file.save(file_path)
-        
-        # Read the CSV file and predict sentiment for each row
-        try:
-            df = pd.read_csv(file_path)
-            # Ensure 'text' column exists in the CSV for sentiment prediction
-            if 'text' not in df.columns:
-                return jsonify({"error": "CSV must contain a 'text' column"}), 400
-            
-            # Predict sentiment (positive, negative, or neutral)
-            df["prediction"] = df["text"].apply(lambda x: TextBlob(str(x)).sentiment.polarity)
-            df["prediction"] = df["prediction"].apply(
-                lambda x: "positive" if x > 0 else "negative" if x < 0 else "neutral"
-            )
-            
-            results = df[["text", "prediction"]].to_dict(orient="records")
-            
-            # Provide a downloadable file with predictions
-            output_file_path = os.path.join(app.config['UPLOAD_FOLDER'], "Predictions.csv")
-            df.to_csv(output_file_path, index=False)
-
-            return jsonify({"results": results, "download_url": f"/download/{os.path.basename(output_file_path)}"})
-
-        except Exception as e:
-            return jsonify({"error": f"Error processing CSV: {str(e)}"}), 500
-
-    elif request.is_json:
-        # Handle text input for sentiment prediction
-        data = request.get_json()
-        text = data.get("text", "")
-        
-        if text.strip() == "":
-            return jsonify({"error": "No text provided"}), 400
-        
-        sentiment = TextBlob(text).sentiment.polarity
-        label = "positive" if sentiment > 0 else "negative" if sentiment < 0 else "neutral"
-        return jsonify({"prediction": label})
-
-    return jsonify({"error": "Invalid request"}), 400
-
-# Route to download the predictions CSV file
-@app.route("/download/<filename>")
-def download(filename):
     try:
-        return send_from_directory(app.config['UPLOAD_FOLDER'], filename, as_attachment=True)
-    except Exception as e:
-        return jsonify({"error": f"Error downloading file: {str(e)}"}), 500
+        # File upload path
+        if "file" in request.files and request.files["file"].filename != "":
+            file = request.files["file"]
 
+            if not file.filename.endswith(".csv"):
+                return jsonify({"error": "Please upload a valid CSV file."})
+
+            data = pd.read_csv(file)
+
+            sentence_column = "Sentence" if "Sentence" in data.columns else "text" if "text" in data.columns else None
+            if not sentence_column:
+                return jsonify({"error": "CSV must contain a 'Sentence' or 'text' column."})
+
+            data = bulk_prediction(data, sentence_column)
+
+            output = BytesIO()
+            data.to_csv(output, index=False)
+            output.seek(0)
+
+            return send_file(output, mimetype="text/csv", as_attachment=True, download_name="Predictions.csv")
+
+        # Text input path
+        elif "text" in request.form and request.form["text"].strip():
+            text_input = request.form["text"].strip()
+            predicted_sentiment = single_prediction(text_input)
+            return jsonify({"prediction": predicted_sentiment})
+
+        else:
+            return jsonify({"error": "No valid input. Please enter text or upload a CSV."})
+
+    except Exception as e:
+        return jsonify({"error": f"Exception occurred: {str(e)}"})
+
+# 🔹 Run the Flask app
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.getenv("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
+
+
+
+
 
 
 
